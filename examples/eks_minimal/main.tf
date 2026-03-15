@@ -16,7 +16,8 @@ provider "aws" {
 module "mcpgateway" {
   source = "../../"
 
-  cluster_type    = "eks"
+  orchestrator    = "eks"
+  compute_type    = "ec2"
   gateway_version = "latest"
   replicas        = 2
   db_engine       = "aurora-postgresql"
