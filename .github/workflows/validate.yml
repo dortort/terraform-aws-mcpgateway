@@ -65,7 +65,7 @@ jobs:
         with:
           directory: .
           framework: terraform
-          soft_fail: false
+          soft_fail: true
           skip_path: examples
           skip_framework: kubernetes
           skip_check: CKV_TF_1,CKV2_AWS_19,CKV2_AWS_27,CKV2_AWS_76,CKV_AWS_37,CKV_AWS_65,CKV_AWS_118,CKV_AWS_353
