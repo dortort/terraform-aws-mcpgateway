@@ -36,6 +36,8 @@ resource "aws_rds_cluster" "aurora" {
   vpc_security_group_ids = [var.security_group_id]
   db_subnet_group_name   = aws_db_subnet_group.this.name
 
+  enabled_cloudwatch_logs_exports = ["postgresql"]
+
   serverlessv2_scaling_configuration {
     min_capacity = 0.5
     max_capacity = 4

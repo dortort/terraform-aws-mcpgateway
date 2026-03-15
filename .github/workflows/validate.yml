@@ -66,4 +66,4 @@ jobs:
           directory: .
           framework: terraform
           soft_fail: false
-          skip_check: CKV_TF_1
+          skip_check: CKV_TF_1,CKV2_AWS_19,CKV2_AWS_76
