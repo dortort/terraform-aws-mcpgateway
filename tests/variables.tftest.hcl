@@ -1,9 +1,9 @@
-# Test valid cluster_type values
-run "valid_ecs_cluster_type" {
+# Test valid orchestrator values
+run "valid_ecs_orchestrator" {
   command = plan
 
   variables {
-    cluster_type           = "ecs"
+    orchestrator           = "ecs"
     jwt_secret_key         = "test-jwt-secret-key-123456"
     auth_encryption_secret = "test-auth-encryption-secret-123456"
     admin_email            = "admin@example.com"
@@ -11,11 +11,11 @@ run "valid_ecs_cluster_type" {
   }
 }
 
-run "valid_eks_cluster_type" {
+run "valid_eks_orchestrator" {
   command = plan
 
   variables {
-    cluster_type           = "eks"
+    orchestrator           = "eks"
     jwt_secret_key         = "test-jwt-secret-key-123456"
     auth_encryption_secret = "test-auth-encryption-secret-123456"
     admin_email            = "admin@example.com"
@@ -23,12 +23,12 @@ run "valid_eks_cluster_type" {
   }
 }
 
-# Test invalid cluster_type
-run "invalid_cluster_type" {
+# Test invalid orchestrator
+run "invalid_orchestrator" {
   command = plan
 
   variables {
-    cluster_type           = "lambda"
+    orchestrator           = "lambda"
     jwt_secret_key         = "test-jwt-secret-key-123456"
     auth_encryption_secret = "test-auth-encryption-secret-123456"
     admin_email            = "admin@example.com"
@@ -36,8 +36,78 @@ run "invalid_cluster_type" {
   }
 
   expect_failures = [
-    var.cluster_type,
+    var.orchestrator,
   ]
+}
+
+# Test valid compute_type values
+run "valid_fargate_compute" {
+  command = plan
+
+  variables {
+    compute_type           = "fargate"
+    jwt_secret_key         = "test-jwt-secret-key-123456"
+    auth_encryption_secret = "test-auth-encryption-secret-123456"
+    admin_email            = "admin@example.com"
+    admin_password         = "test-admin-password-123456"
+  }
+}
+
+run "valid_ec2_compute" {
+  command = plan
+
+  variables {
+    compute_type           = "ec2"
+    jwt_secret_key         = "test-jwt-secret-key-123456"
+    auth_encryption_secret = "test-auth-encryption-secret-123456"
+    admin_email            = "admin@example.com"
+    admin_password         = "test-admin-password-123456"
+  }
+}
+
+# Test invalid compute_type
+run "invalid_compute_type" {
+  command = plan
+
+  variables {
+    compute_type           = "spot"
+    jwt_secret_key         = "test-jwt-secret-key-123456"
+    auth_encryption_secret = "test-auth-encryption-secret-123456"
+    admin_email            = "admin@example.com"
+    admin_password         = "test-admin-password-123456"
+  }
+
+  expect_failures = [
+    var.compute_type,
+  ]
+}
+
+# Test ECS + EC2 combination
+run "ecs_ec2_combination" {
+  command = plan
+
+  variables {
+    orchestrator           = "ecs"
+    compute_type           = "ec2"
+    jwt_secret_key         = "test-jwt-secret-key-123456"
+    auth_encryption_secret = "test-auth-encryption-secret-123456"
+    admin_email            = "admin@example.com"
+    admin_password         = "test-admin-password-123456"
+  }
+}
+
+# Test EKS + Fargate combination
+run "eks_fargate_combination" {
+  command = plan
+
+  variables {
+    orchestrator           = "eks"
+    compute_type           = "fargate"
+    jwt_secret_key         = "test-jwt-secret-key-123456"
+    auth_encryption_secret = "test-auth-encryption-secret-123456"
+    admin_email            = "admin@example.com"
+    admin_password         = "test-admin-password-123456"
+  }
 }
 
 # Test valid db_engine values
