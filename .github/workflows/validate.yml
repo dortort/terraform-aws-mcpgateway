@@ -1,0 +1,69 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.0"
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
+
+  validate:
+    name: Validate (${{ matrix.directory }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory:
+          - "."
+          - "examples/eks_minimal"
+          - "examples/ecs_full"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.0"
+      - name: Terraform Init
+        run: terraform init -backend=false
+        working-directory: ${{ matrix.directory }}
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ${{ matrix.directory }}
+
+  test:
+    name: Terraform Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.0"
+      - name: Terraform Init
+        run: terraform init -backend=false
+      - name: Terraform Test
+        run: terraform test
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          soft_fail: false
+          skip_check: CKV_TF_1
