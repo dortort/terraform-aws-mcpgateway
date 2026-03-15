@@ -30,5 +30,15 @@ output "oidc_provider_url" {
 
 output "node_role_arn" {
   description = "ARN of the IAM role assigned to managed node group instances"
-  value       = aws_iam_role.eks_nodes.arn
+  value       = local.is_ec2 ? aws_iam_role.eks_nodes[0].arn : null
+}
+
+output "fargate_profile_arn" {
+  description = "ARN of the EKS Fargate profile"
+  value       = local.is_fargate ? aws_eks_fargate_profile.mcpgw[0].arn : null
+}
+
+output "fargate_execution_role_arn" {
+  description = "ARN of the Fargate pod execution role"
+  value       = local.is_fargate ? aws_iam_role.eks_fargate[0].arn : null
 }

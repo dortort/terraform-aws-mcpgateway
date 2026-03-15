@@ -1,3 +1,20 @@
+variable "compute_type" {
+  description = "Compute engine: 'ec2' (managed node groups) or 'fargate' (serverless pods)"
+  type        = string
+  default     = "ec2"
+
+  validation {
+    condition     = contains(["ec2", "fargate"], var.compute_type)
+    error_message = "compute_type must be 'ec2' or 'fargate'."
+  }
+}
+
+variable "fargate_namespace" {
+  description = "Kubernetes namespace for Fargate profile selector"
+  type        = string
+  default     = "mcpgateway"
+}
+
 variable "private_subnet_ids" {
   description = "List of private subnet IDs for node groups and cluster"
   type        = list(string)

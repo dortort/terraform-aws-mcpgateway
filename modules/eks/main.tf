@@ -1,4 +1,13 @@
 # -----------------------------------------------------------------------------
+# Locals
+# -----------------------------------------------------------------------------
+
+locals {
+  is_ec2     = var.compute_type == "ec2"
+  is_fargate = var.compute_type == "fargate"
+}
+
+# -----------------------------------------------------------------------------
 # IAM Role: EKS Cluster
 # -----------------------------------------------------------------------------
 
@@ -27,11 +36,12 @@ resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
 }
 
 # -----------------------------------------------------------------------------
-# IAM Role: Node Group
+# IAM Role: Node Group (EC2 only)
 # -----------------------------------------------------------------------------
 
 resource "aws_iam_role" "eks_nodes" {
-  name = "mcpgw-eks-node-role"
+  count = local.is_ec2 ? 1 : 0
+  name  = "mcpgw-eks-node-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -50,17 +60,20 @@ resource "aws_iam_role" "eks_nodes" {
 }
 
 resource "aws_iam_role_policy_attachment" "eks_worker_node_policy" {
-  role       = aws_iam_role.eks_nodes.name
+  count      = local.is_ec2 ? 1 : 0
+  role       = aws_iam_role.eks_nodes[0].name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
-  role       = aws_iam_role.eks_nodes.name
+  count      = local.is_ec2 ? 1 : 0
+  role       = aws_iam_role.eks_nodes[0].name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
 resource "aws_iam_role_policy_attachment" "eks_ecr_readonly" {
-  role       = aws_iam_role.eks_nodes.name
+  count      = local.is_ec2 ? 1 : 0
+  role       = aws_iam_role.eks_nodes[0].name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
@@ -96,10 +109,11 @@ resource "aws_eks_cluster" "mcpgw" {
 }
 
 # -----------------------------------------------------------------------------
-# Launch Template (IMDSv2 enforcement)
+# Launch Template (IMDSv2 enforcement) — EC2 only
 # -----------------------------------------------------------------------------
 
 resource "aws_launch_template" "mcpgw_nodes" {
+  count       = local.is_ec2 ? 1 : 0
   name_prefix = "mcpgw-nodes-"
 
   metadata_options {
@@ -116,13 +130,14 @@ resource "aws_launch_template" "mcpgw_nodes" {
 }
 
 # -----------------------------------------------------------------------------
-# Managed Node Group
+# Managed Node Group — EC2 only
 # -----------------------------------------------------------------------------
 
 resource "aws_eks_node_group" "mcpgw" {
+  count           = local.is_ec2 ? 1 : 0
   cluster_name    = aws_eks_cluster.mcpgw.name
   node_group_name = "mcpgw-nodes"
-  node_role_arn   = aws_iam_role.eks_nodes.arn
+  node_role_arn   = aws_iam_role.eks_nodes[0].arn
   subnet_ids      = var.private_subnet_ids
   instance_types  = var.node_instance_types
 
@@ -133,8 +148,8 @@ resource "aws_eks_node_group" "mcpgw" {
   }
 
   launch_template {
-    id      = aws_launch_template.mcpgw_nodes.id
-    version = aws_launch_template.mcpgw_nodes.latest_version
+    id      = aws_launch_template.mcpgw_nodes[0].id
+    version = aws_launch_template.mcpgw_nodes[0].latest_version
   }
 
   tags = var.tags
@@ -158,6 +173,60 @@ resource "aws_iam_openid_connect_provider" "eks" {
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = data.tls_certificate.eks.certificates[*].sha1_fingerprint
   url             = aws_eks_cluster.mcpgw.identity[0].oidc[0].issuer
+
+  tags = var.tags
+}
+
+# -----------------------------------------------------------------------------
+# Fargate Pod Execution Role — Fargate only
+# -----------------------------------------------------------------------------
+
+resource "aws_iam_role" "eks_fargate" {
+  count = local.is_fargate ? 1 : 0
+  name  = "mcpgw-eks-fargate-execution"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "eks-fargate-pods.amazonaws.com" }
+      Condition = {
+        ArnLike = {
+          "aws:SourceArn" = aws_eks_cluster.mcpgw.arn
+        }
+      }
+    }]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "eks_fargate_pod_execution" {
+  count      = local.is_fargate ? 1 : 0
+  role       = aws_iam_role.eks_fargate[0].name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy"
+}
+
+# -----------------------------------------------------------------------------
+# Fargate Profile — Fargate only
+# -----------------------------------------------------------------------------
+
+resource "aws_eks_fargate_profile" "mcpgw" {
+  count                  = local.is_fargate ? 1 : 0
+  cluster_name           = aws_eks_cluster.mcpgw.name
+  fargate_profile_name   = "mcpgw-fargate"
+  pod_execution_role_arn = aws_iam_role.eks_fargate[0].arn
+  subnet_ids             = var.private_subnet_ids
+
+  selector {
+    namespace = var.fargate_namespace
+  }
+
+  # Also allow kube-system pods on Fargate (for CoreDNS)
+  selector {
+    namespace = "kube-system"
+  }
 
   tags = var.tags
 }
