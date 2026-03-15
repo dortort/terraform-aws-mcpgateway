@@ -1,3 +1,14 @@
+variable "compute_type" {
+  description = "Compute engine: 'fargate' (serverless) or 'ec2' (managed instances)"
+  type        = string
+  default     = "fargate"
+
+  validation {
+    condition     = contains(["fargate", "ec2"], var.compute_type)
+    error_message = "compute_type must be 'fargate' or 'ec2'."
+  }
+}
+
 variable "gateway_version" {
   description = "Container image tag for the MCP Gateway"
   type        = string

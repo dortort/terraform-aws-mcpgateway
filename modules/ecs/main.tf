@@ -9,6 +9,8 @@ data "aws_caller_identity" "current" {}
 # ---------------------------------------------------------------------------
 
 locals {
+  is_fargate = var.compute_type == "fargate"
+
   db_scheme = var.db_engine == "aurora-postgresql" ? "postgresql+psycopg" : (
     var.db_engine == "rds-mysql" ? "mysql+pymysql" : "sqlite"
   )
@@ -82,6 +84,133 @@ resource "aws_ecs_cluster" "mcpgw" {
   }
 
   tags = var.tags
+}
+
+# ---------------------------------------------------------------------------
+# EC2 Capacity Provider (only when compute_type = "ec2")
+# ---------------------------------------------------------------------------
+
+resource "aws_ecs_cluster_capacity_providers" "mcpgw" {
+  count              = local.is_fargate ? 0 : 1
+  cluster_name       = aws_ecs_cluster.mcpgw.name
+  capacity_providers = [aws_ecs_capacity_provider.mcpgw[0].name]
+  default_capacity_provider_strategy {
+    capacity_provider = aws_ecs_capacity_provider.mcpgw[0].name
+    weight            = 1
+  }
+}
+
+resource "aws_ecs_capacity_provider" "mcpgw" {
+  count = local.is_fargate ? 0 : 1
+  name  = "mcpgw-ec2"
+  auto_scaling_group_provider {
+    auto_scaling_group_arn         = aws_autoscaling_group.mcpgw[0].arn
+    managed_termination_protection = "ENABLED"
+    managed_scaling {
+      status                    = "ENABLED"
+      target_capacity           = 90
+      minimum_scaling_step_size = 1
+      maximum_scaling_step_size = 2
+    }
+  }
+  tags = var.tags
+}
+
+data "aws_ssm_parameter" "ecs_ami" {
+  count = local.is_fargate ? 0 : 1
+  name  = "/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id"
+}
+
+resource "aws_launch_template" "mcpgw" {
+  count         = local.is_fargate ? 0 : 1
+  name_prefix   = "mcpgw-ecs-"
+  image_id      = data.aws_ssm_parameter.ecs_ami[0].value
+  instance_type = "t3.medium"
+
+  iam_instance_profile {
+    arn = aws_iam_instance_profile.ecs_ec2[0].arn
+  }
+
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    echo "ECS_CLUSTER=${aws_ecs_cluster.mcpgw.name}" >> /etc/ecs/ecs.config
+  EOF
+  )
+
+  metadata_options {
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+    http_endpoint               = "enabled"
+  }
+
+  network_interfaces {
+    security_groups = [var.security_group_id]
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+    tags          = merge(var.tags, { Name = "mcpgw-ecs-instance" })
+  }
+
+  tags = var.tags
+}
+
+resource "aws_autoscaling_group" "mcpgw" {
+  count               = local.is_fargate ? 0 : 1
+  name_prefix         = "mcpgw-ecs-"
+  vpc_zone_identifier = var.private_subnet_ids
+  min_size            = var.replicas
+  max_size            = var.replicas * 2
+  desired_capacity    = var.replicas
+
+  launch_template {
+    id      = aws_launch_template.mcpgw[0].id
+    version = "$Latest"
+  }
+
+  protect_from_scale_in = true
+
+  tag {
+    key                 = "AmazonECSManaged"
+    value               = "true"
+    propagate_at_launch = true
+  }
+
+  lifecycle {
+    ignore_changes = [desired_capacity]
+  }
+}
+
+resource "aws_iam_instance_profile" "ecs_ec2" {
+  count = local.is_fargate ? 0 : 1
+  name  = "mcpgw-ecs-ec2-profile"
+  role  = aws_iam_role.ecs_ec2[0].name
+}
+
+resource "aws_iam_role" "ecs_ec2" {
+  count = local.is_fargate ? 0 : 1
+  name  = "mcpgw-ecs-ec2-instance"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
+  })
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_ec2_instance" {
+  count      = local.is_fargate ? 0 : 1
+  role       = aws_iam_role.ecs_ec2[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_ec2_ssm" {
+  count      = local.is_fargate ? 0 : 1
+  role       = aws_iam_role.ecs_ec2[0].name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 # ---------------------------------------------------------------------------
@@ -256,7 +385,7 @@ locals {
 
 resource "aws_ecs_task_definition" "mcpgw" {
   family                   = "mcpgw"
-  requires_compatibilities = ["FARGATE"]
+  requires_compatibilities = local.is_fargate ? ["FARGATE"] : ["EC2"]
   network_mode             = "awsvpc"
   cpu                      = "1024"
   memory                   = "2048"
@@ -278,7 +407,15 @@ resource "aws_ecs_service" "mcpgw" {
   cluster         = aws_ecs_cluster.mcpgw.arn
   task_definition = aws_ecs_task_definition.mcpgw.arn
   desired_count   = var.replicas
-  launch_type     = "FARGATE"
+  launch_type     = local.is_fargate ? "FARGATE" : null
+
+  dynamic "capacity_provider_strategy" {
+    for_each = local.is_fargate ? [] : [1]
+    content {
+      capacity_provider = aws_ecs_capacity_provider.mcpgw[0].name
+      weight            = 1
+    }
+  }
 
   network_configuration {
     subnets          = var.private_subnet_ids
