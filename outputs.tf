@@ -16,11 +16,11 @@ output "redis_endpoint" {
 output "iam_role_arns" {
   description = "Map of IAM Role ARNs created by the module"
   value = merge(
-    var.cluster_type == "ecs" ? {
+    var.orchestrator == "ecs" ? {
       ecs_task_role      = module.ecs[0].task_role_arn
       ecs_execution_role = module.ecs[0].execution_role_arn
     } : {},
-    var.cluster_type == "eks" ? {
+    var.orchestrator == "eks" ? {
       eks_node_role = module.eks[0].node_role_arn
     } : {},
   )
@@ -28,7 +28,7 @@ output "iam_role_arns" {
 
 output "cloudwatch_log_group" {
   description = "CloudWatch Log Group name"
-  value       = var.cluster_type == "ecs" ? module.ecs[0].log_group_name : null
+  value       = var.orchestrator == "ecs" ? module.ecs[0].log_group_name : null
 }
 
 output "rds_endpoint" {

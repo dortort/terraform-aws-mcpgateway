@@ -1,11 +1,22 @@
-variable "cluster_type" {
-  description = "Cluster type to deploy: 'ecs' (Fargate) or 'eks' (Kubernetes)"
+variable "orchestrator" {
+  description = "Container orchestrator: 'ecs' or 'eks'"
   type        = string
   default     = "ecs"
 
   validation {
-    condition     = contains(["ecs", "eks"], var.cluster_type)
-    error_message = "cluster_type must be 'ecs' or 'eks'."
+    condition     = contains(["ecs", "eks"], var.orchestrator)
+    error_message = "orchestrator must be 'ecs' or 'eks'."
+  }
+}
+
+variable "compute_type" {
+  description = "Compute engine: 'fargate' (serverless) or 'ec2' (managed instances/nodes)"
+  type        = string
+  default     = "fargate"
+
+  validation {
+    condition     = contains(["fargate", "ec2"], var.compute_type)
+    error_message = "compute_type must be 'fargate' or 'ec2'."
   }
 }
 

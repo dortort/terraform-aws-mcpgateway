@@ -110,12 +110,14 @@ module "load_balancer" {
 }
 
 # -----------------------------------------------------------------------------
-# ECS Fargate
+# ECS
 # -----------------------------------------------------------------------------
 
 module "ecs" {
   source = "./modules/ecs"
-  count  = var.cluster_type == "ecs" ? 1 : 0
+  count  = var.orchestrator == "ecs" ? 1 : 0
+
+  compute_type = var.compute_type
 
   gateway_version    = var.gateway_version
   replicas           = var.replicas
@@ -159,8 +161,9 @@ module "ecs" {
 
 module "eks" {
   source = "./modules/eks"
-  count  = var.cluster_type == "eks" ? 1 : 0
+  count  = var.orchestrator == "eks" ? 1 : 0
 
+  compute_type       = var.compute_type
   private_subnet_ids = module.networking.private_subnet_ids
   public_subnet_ids  = module.networking.public_subnet_ids
   security_group_id  = module.networking.gateway_security_group_id
@@ -173,23 +176,23 @@ module "eks" {
 # -----------------------------------------------------------------------------
 
 provider "kubernetes" {
-  host                   = var.cluster_type == "eks" ? module.eks[0].cluster_endpoint : "https://localhost"
-  cluster_ca_certificate = var.cluster_type == "eks" ? base64decode(module.eks[0].cluster_certificate_authority) : ""
+  host                   = var.orchestrator == "eks" ? module.eks[0].cluster_endpoint : "https://localhost"
+  cluster_ca_certificate = var.orchestrator == "eks" ? base64decode(module.eks[0].cluster_certificate_authority) : ""
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "aws"
-    args        = var.cluster_type == "eks" ? ["eks", "get-token", "--cluster-name", module.eks[0].cluster_name] : []
+    args        = var.orchestrator == "eks" ? ["eks", "get-token", "--cluster-name", module.eks[0].cluster_name] : []
   }
 }
 
 provider "helm" {
   kubernetes {
-    host                   = var.cluster_type == "eks" ? module.eks[0].cluster_endpoint : "https://localhost"
-    cluster_ca_certificate = var.cluster_type == "eks" ? base64decode(module.eks[0].cluster_certificate_authority) : ""
+    host                   = var.orchestrator == "eks" ? module.eks[0].cluster_endpoint : "https://localhost"
+    cluster_ca_certificate = var.orchestrator == "eks" ? base64decode(module.eks[0].cluster_certificate_authority) : ""
     exec {
       api_version = "client.authentication.k8s.io/v1beta1"
       command     = "aws"
-      args        = var.cluster_type == "eks" ? ["eks", "get-token", "--cluster-name", module.eks[0].cluster_name] : []
+      args        = var.orchestrator == "eks" ? ["eks", "get-token", "--cluster-name", module.eks[0].cluster_name] : []
     }
   }
 }
@@ -199,7 +202,7 @@ provider "helm" {
 # -----------------------------------------------------------------------------
 
 resource "kubernetes_namespace" "mcpgw" {
-  count = var.cluster_type == "eks" ? 1 : 0
+  count = var.orchestrator == "eks" ? 1 : 0
 
   metadata {
     name = "mcpgateway"
@@ -210,7 +213,7 @@ resource "kubernetes_namespace" "mcpgw" {
 }
 
 resource "kubernetes_secret" "mcpgw" {
-  count = var.cluster_type == "eks" ? 1 : 0
+  count = var.orchestrator == "eks" ? 1 : 0
 
   metadata {
     name      = "mcpgw-secrets"
@@ -231,7 +234,7 @@ resource "kubernetes_secret" "mcpgw" {
 }
 
 resource "kubernetes_deployment" "mcpgw" {
-  count = var.cluster_type == "eks" ? 1 : 0
+  count = var.orchestrator == "eks" ? 1 : 0
 
   metadata {
     name      = "mcpgateway"
@@ -389,7 +392,7 @@ resource "kubernetes_deployment" "mcpgw" {
 }
 
 resource "kubernetes_service" "mcpgw" {
-  count = var.cluster_type == "eks" ? 1 : 0
+  count = var.orchestrator == "eks" ? 1 : 0
 
   metadata {
     name      = "mcpgateway"
