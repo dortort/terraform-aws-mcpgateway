@@ -59,7 +59,8 @@ provider "aws" {
 module "mcpgateway" {
   source = "git::https://github.com/dortort/terraform-aws-mcpgateway.git"
 
-  cluster_type    = "ecs"
+  orchestrator    = "ecs"
+  compute_type    = "fargate"
   gateway_version = "latest"
   replicas        = 2
   db_engine       = "aurora-postgresql"
@@ -109,7 +110,8 @@ export AWS_REGION="us-east-1"
 
 | Name | Type | Default | Required | Description |
 |------|------|---------|----------|-------------|
-| `cluster_type` | string | `"ecs"` | No | Cluster orchestration: `"ecs"` (Fargate) or `"eks"` (Kubernetes) |
+| `orchestrator` | string | `"ecs"` | No | Container orchestrator: `"ecs"` or `"eks"` |
+| `compute_type` | string | `"fargate"` | No | Compute engine: `"fargate"` or `"ec2"` |
 | `gateway_version` | string | `"latest"` | No | Container image tag for `ghcr.io/ibm/mcp-context-forge` |
 | `replicas` | number | `2` | No | Desired replica count. Must be `1` when using SQLite. |
 | `db_engine` | string | `"aurora-postgresql"` | No | Database engine: `"aurora-postgresql"`, `"rds-mysql"`, or `"sqlite"` |
@@ -162,6 +164,45 @@ Approximate monthly cost for a production deployment with default settings (us-e
 - Disable Redis if not needed (saves ~$49)
 - Use `create_vpc = false` with existing VPC (eliminates NAT Gateway ~$32)
 - Reduce log retention from 90 to 30 days (saves ~$25)
+
+## Deployment Matrix
+
+Choose your orchestrator and compute combination based on your requirements:
+
+| Orchestrator | Compute | Description |
+|---|---|---|
+| ECS | Fargate | **Serverless, default.** Auto-scaling, pay-per-task, no server management. Best for variable workloads and rapid deployments. |
+| ECS | EC2 | **Cost-optimized.** Managed node groups with auto-scaling, GPU support, larger task sizes. Best for steady-state workloads. |
+| EKS | Fargate | **Kubernetes without nodes.** Fargate profiles, Kubernetes API, no EC2 management. Best for teams familiar with K8s wanting simplicity. |
+| EKS | EC2 | **Full Kubernetes control.** Managed node groups, DaemonSets, advanced networking (Istio, Cilium), custom kubelet configs. Best for complex K8s workloads. |
+
+**Deployment examples:**
+
+```hcl
+# ECS Fargate (default, recommended)
+module "mcpgateway" {
+  orchestrator = "ecs"
+  compute_type = "fargate"
+}
+
+# ECS on EC2
+module "mcpgateway" {
+  orchestrator = "ecs"
+  compute_type = "ec2"
+}
+
+# EKS with Fargate
+module "mcpgateway" {
+  orchestrator = "eks"
+  compute_type = "fargate"
+}
+
+# EKS with EC2 (full Kubernetes)
+module "mcpgateway" {
+  orchestrator = "eks"
+  compute_type = "ec2"
+}
+```
 
 ## Security
 

@@ -5,7 +5,7 @@ This guide covers deployment scenarios, configuration decisions, and best practi
 ## Table of Contents
 
 1. [Database Engine Selection](#database-engine-selection)
-2. [Cluster Type: ECS vs EKS](#cluster-type-ecs-vs-eks)
+2. [Orchestrator and Compute Selection](#orchestrator-and-compute-selection)
 3. [VPC Configuration](#vpc-configuration)
 4. [Custom Domain and TLS](#custom-domain-and-tls)
 5. [Policy Bundle Configuration](#policy-bundle-configuration)
@@ -117,35 +117,47 @@ The SQLite database is stored in the ECS task storage (ephemeral). For persisten
 - Or configure regular backups to S3
 - Or migrate to Aurora/RDS for production
 
-## Cluster Type: ECS vs EKS
+## Orchestrator and Compute Selection
 
-Choose between AWS's managed container platforms.
+Choose your container orchestrator (ECS or EKS) and compute engine (Fargate or EC2) based on your requirements.
+
+### Deployment Combinations
+
+| Orchestrator | Compute | Use Case | Scaling | Complexity |
+|---|---|---|---|---|
+| **ECS** | **Fargate** | Serverless, simple deployments, variable workloads | Auto-scaling tasks | Low |
+| **ECS** | **EC2** | Steady-state workloads, GPU support, cost optimization | Auto-scaling instances | Medium |
+| **EKS** | **Fargate** | Kubernetes without node management | Pod auto-scaling | Medium |
+| **EKS** | **EC2** | Full Kubernetes control, advanced features | Node/pod auto-scaling | High |
 
 ### ECS Fargate (Recommended for Most)
 
-**Best for:** Simple deployments, AWS-native environments, minimal Kubernetes overhead.
+**Best for:** Simple deployments, AWS-native environments, variable traffic patterns, rapid deployment cycles.
 
 **Pros:**
-- Simpler to manage (no cluster nodes)
-- Faster deployment (minutes vs hours)
+- Serverless compute (no servers to manage)
 - Automatic scaling built-in
-- Lower operational overhead
-- Serverless compute model
+- Pay-per-task (cost-efficient for variable workloads)
+- Faster deployment (minutes)
 - Native AWS integrations (IAM, Secrets Manager, CloudWatch)
+- Lower operational overhead
 
 **Cons:**
 - Less flexible than Kubernetes
 - Limited to AWS-specific patterns
 - Harder to use third-party Kubernetes tools
+- Smaller max task size vs EC2
 
 **Configuration:**
 ```hcl
 module "mcpgateway" {
-  cluster_type = "ecs"
+  orchestrator = "ecs"
+  compute_type = "fargate"
   replicas     = 2
 
   tags = {
-    ClusterType = "ecs"
+    Orchestrator = "ecs"
+    ComputeType  = "fargate"
   }
 }
 
@@ -167,32 +179,70 @@ aws ecs update-service \
   --desired-count 5
 ```
 
-### EKS (Kubernetes)
+### ECS on EC2
 
-**Best for:** Complex workloads, multi-cluster deployments, advanced Kubernetes features.
+**Best for:** Steady-state workloads, cost-sensitive deployments, GPU workloads, larger task sizes.
 
 **Pros:**
-- Full Kubernetes ecosystem
-- Multi-cloud portability
-- Advanced networking (Istio, Cilium)
-- Custom Kubernetes operators
-- Horizontal Pod Autoscaling (HPA)
-- Ingress controller flexibility
+- Cost-effective for steady-state workloads (30-70% savings via Reserved Instances)
+- GPU and Inf instance support
+- Larger task memory/CPU limits
+- Managed capacity providers for auto-scaling
+- Flexible compute options
 
 **Cons:**
-- Higher operational complexity
-- Node management overhead
-- Longer learning curve
-- Additional cost (EKS control plane $0.10/hour)
+- Requires node management
+- Still less flexible than native Kubernetes
+- Slower initial setup vs Fargate
+- Additional cost of EC2 instances
 
 **Configuration:**
 ```hcl
 module "mcpgateway" {
-  cluster_type = "eks"
+  orchestrator = "ecs"
+  compute_type = "ec2"
   replicas     = 2
 
   tags = {
-    ClusterType = "eks"
+    Orchestrator = "ecs"
+    ComputeType  = "ec2"
+  }
+}
+```
+
+**Monitoring EC2 capacity:**
+```bash
+aws ecs describe-clusters --clusters mcpgateway \
+  --query 'clusters[].registeredContainerInstancesCount'
+```
+
+### EKS with Fargate
+
+**Best for:** Kubernetes-native teams wanting simplicity, avoiding node management, standard workloads.
+
+**Pros:**
+- Kubernetes API without node management
+- Fargate profiles for automatic pod placement
+- No EC2 instance management
+- Good for Kubernetes-native applications
+- Automatic scaling
+
+**Cons:**
+- Higher cost than ECS Fargate
+- Less node-level control
+- Additional complexity vs ECS
+- EKS control plane cost ($0.10/hour)
+
+**Configuration:**
+```hcl
+module "mcpgateway" {
+  orchestrator = "eks"
+  compute_type = "fargate"
+  replicas     = 2
+
+  tags = {
+    Orchestrator = "eks"
+    ComputeType  = "fargate"
   }
 }
 
@@ -208,8 +258,61 @@ kubectl get pods -n mcpgateway
 kubectl logs -n mcpgateway deploy/mcpgateway -f
 ```
 
-**Scaling:**
+### EKS with EC2 (Full Kubernetes Control)
+
+**Best for:** Complex Kubernetes workloads, multi-cluster deployments, advanced networking, DaemonSets, custom kubelet configs.
+
+**Pros:**
+- Full Kubernetes ecosystem and features
+- Advanced networking (Istio, Cilium, network policies)
+- Custom Kubernetes operators
+- DaemonSet support (logging agents, monitoring)
+- Horizontal Pod Autoscaling (HPA)
+- Ingress controller flexibility
+- Multi-cloud portability
+- Custom kubelet configurations
+
+**Cons:**
+- Highest operational complexity
+- Node management overhead
+- Longest learning curve
+- Highest total cost (EKS + EC2 + control plane)
+- Requires Kubernetes expertise
+
+**Configuration:**
+```hcl
+module "mcpgateway" {
+  orchestrator = "eks"
+  compute_type = "ec2"
+  replicas     = 2
+
+  tags = {
+    Orchestrator = "eks"
+    ComputeType  = "ec2"
+  }
+}
+
+output "cluster_endpoint" {
+  value = module.mcpgateway.cluster_endpoint
+}
+```
+
+**Advanced Kubernetes operations:**
 ```bash
+# Deploy custom ingress controller
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/aws/deploy.yaml
+
+# Install service mesh (Istio)
+istioctl install --set profile=production -y
+
+# Configure HPA for auto-scaling
+kubectl autoscale deployment mcpgateway -n mcpgateway \
+  --min=2 --max=10 --cpu-percent=70
+
+# Deploy DaemonSet (e.g., monitoring agent)
+kubectl apply -f monitoring-daemonset.yaml
+
+# Pod scaling
 kubectl scale deployment mcpgateway -n mcpgateway --replicas=5
 ```
 

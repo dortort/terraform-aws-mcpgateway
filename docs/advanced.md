@@ -136,7 +136,8 @@ provider "aws" {
 module "mcpgateway_primary" {
   source = "../../"
 
-  cluster_type    = "ecs"
+  orchestrator    = "ecs"
+  compute_type    = "fargate"
   replicas        = 3
   db_engine       = "aurora-postgresql"
   enable_redis    = true
@@ -175,7 +176,8 @@ resource "aws_rds_cluster_instance" "read_replica" {
 module "mcpgateway_secondary" {
   source = "../../"
 
-  cluster_type  = "ecs"
+  orchestrator  = "ecs"
+  compute_type  = "fargate"
   replicas      = 2
   db_engine     = "aurora-postgresql"  # Uses read replica above
   custom_domain = ""  # No custom domain; use ALB DNS for failover
