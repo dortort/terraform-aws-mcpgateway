@@ -139,6 +139,11 @@ variable "alarm_auth_failure_threshold" {
   default     = 100
 }
 
+variable "kms_key_arn" {
+  description = "ARN of the KMS key used to encrypt Secrets Manager secrets and CloudWatch log groups"
+  type        = string
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

@@ -152,6 +152,7 @@ module "ecs" {
   log_retention_days           = var.observability.log_retention_days
   alarm_5xx_threshold          = var.observability.alarm_5xx_threshold
   alarm_auth_failure_threshold = var.observability.alarm_auth_failure_threshold
+  kms_key_arn                  = module.secrets.kms_key_arn
   tags                         = local.common_tags
 }
 

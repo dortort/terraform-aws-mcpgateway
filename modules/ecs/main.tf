@@ -34,6 +34,7 @@ resource "aws_secretsmanager_secret" "database_url" {
   name                    = "mcpgw/database-url"
   description             = "Composed DATABASE_URL for MCP Gateway"
   recovery_window_in_days = 7
+  kms_key_id              = var.kms_key_arn
   tags                    = var.tags
 }
 
@@ -58,6 +59,7 @@ resource "aws_secretsmanager_secret" "redis_url" {
   name                    = "mcpgw/redis-url"
   description             = "Composed REDIS_URL for MCP Gateway"
   recovery_window_in_days = 7
+  kms_key_id              = var.kms_key_arn
   tags                    = var.tags
 }
 
@@ -220,6 +222,7 @@ resource "aws_iam_role_policy_attachment" "ecs_ec2_ssm" {
 resource "aws_cloudwatch_log_group" "mcpgw" {
   name              = "/ecs/mcpgw"
   retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_arn
   tags              = var.tags
 }
 

@@ -28,10 +28,12 @@ resource "aws_rds_cluster" "aurora" {
   storage_encrypted = true
   kms_key_id        = var.kms_key_arn
 
-  deletion_protection       = true
-  backup_retention_period   = 7
-  skip_final_snapshot       = false
-  final_snapshot_identifier = "mcpgw-final-snapshot"
+  deletion_protection                 = true
+  backup_retention_period             = 7
+  skip_final_snapshot                 = false
+  final_snapshot_identifier           = "mcpgw-final-snapshot"
+  copy_tags_to_snapshot               = true
+  iam_database_authentication_enabled = true
 
   vpc_security_group_ids = [var.security_group_id]
   db_subnet_group_name   = aws_db_subnet_group.this.name
@@ -81,10 +83,11 @@ resource "aws_db_instance" "mysql" {
   storage_encrypted = true
   kms_key_id        = var.kms_key_arn
 
-  deletion_protection       = true
-  backup_retention_period   = 7
-  skip_final_snapshot       = false
-  final_snapshot_identifier = "mcpgw-final-snapshot"
+  deletion_protection        = true
+  backup_retention_period    = 7
+  skip_final_snapshot        = false
+  final_snapshot_identifier  = "mcpgw-final-snapshot"
+  auto_minor_version_upgrade = true
 
   vpc_security_group_ids = [var.security_group_id]
   db_subnet_group_name   = aws_db_subnet_group.this.name
