@@ -14,15 +14,34 @@ All traffic is protected by AWS WAF, encrypted end-to-end, and monitored via Clo
 ## Architecture
 
 ```
-Internet → Route53 → ALB (WAF) → ECS Fargate / EKS Pods (Private Subnet)
-                       ↓
-           ┌───────────┼───────────┐
-           ↓           ↓           ↓
-      Aurora/RDS   ElastiCache   S3 Buckets
-      (Encrypted)  (Redis)       (Policies)
-
-Secrets Manager → IAM Roles → ECS/EKS
-CloudWatch → Logs & Alarms
+┌─ Internet ───────────────────────────────────┐
+│  Client                                      │
+└──────────────┬───────────────────────────────┘
+               ↓
+┌─ Edge ───────┴───────────────────────────────┐
+│  Route 53 → ACM Certificate                  │
+│  AWS WAF (managed rules + rate limiting)     │
+└──────────────┬───────────────────────────────┘
+               ↓
+┌─ VPC ────────┴───────────────────────────────┐
+│ ┌─ Public Subnets ────────────────────────┐  │
+│ │  ALB (HTTPS:443 → HTTP:4444)            │  │
+│ │  NAT Gateway                            │  │
+│ └────────────┬────────────────────────────┘  │
+│              ↓                               │
+│ ┌─ Private Subnets ──────────────────────┐   │
+│ │ Compute (orchestrator × compute_type)  │   │
+│ │  ┌──────────────┬──────────────────┐   │   │
+│ │  │ ECS Fargate  │  ECS on EC2      │   │   │
+│ │  │ EKS Fargate  │  EKS on EC2      │   │   │
+│ │  └──────────────┴──────────────────┘   │   │
+│ │         ↓                ↓             │   │
+│ │ Aurora/RDS MySQL    ElastiCache Redis  │   │
+│ └────────────────────────────────────────┘   │
+│                                              │
+│  Secrets Manager · KMS · IAM · CloudWatch    │
+│  S3 (OPA policy bundles)                     │
+└──────────────────────────────────────────────┘
 ```
 
 **Components:**
