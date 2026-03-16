@@ -1,203 +1,104 @@
 @startuml terraform-aws-mcpgateway-architecture
-!define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v14.0/dist
-!include AWSPUML/AmazonEC2.puml
-!include AWSPUML/storage/ElastiCache.puml
-!include AWSPUML/database/AmazonRDS.puml
-!include AWSPUML/database/AmazonAurora.puml
-!include AWSPUML/network/ElasticLoadBalancingApplicationLoadBalancer.puml
-!include AWSPUML/network/Route53.puml
-!include AWSPUML/security/CertificateManager.puml
-!include AWSPUML/security/WAF.puml
-!include AWSPUML/compute/ElasticContainerService.puml
-!include AWSPUML/compute/ElasticKubernetesService.puml
-!include AWSPUML/security/SecretsManager.puml
-!include AWSPUML/security/IdentityAndAccessManagement.puml
-!include AWSPUML/management/CloudWatch.puml
-!include AWSPUML/storage/SimpleStorageService.puml
-!include AWSPUML/network/VirtualPrivateCloud.puml
-!include AWSPUML/network/NATGateway.puml
 
+top to bottom direction
+skinparam defaultTextAlignment center
+skinparam shadowing false
+skinparam backgroundColor #FEFEFE
 skinparam rectangle {
-    BackgroundColor<<internal>> #E1F5FF
-    BorderColor<<internal>> #0277BD
-    BackgroundColor<<external>> #FFF9C4
-    BorderColor<<external>> #F57F17
+    RoundCorner 8
 }
 
 title terraform-aws-mcpgateway Architecture
 
-package "Internet" <<external>> {
-    rectangle "Client / API Consumer" as client
+' === Internet ===
+cloud "Internet" as internet #F5F5F5 {
+    rectangle "Client / API Consumer" as client #FFFFFF
 }
 
-rectangle "AWS Region (us-east-1)" {
-    package "Route53 + ACM" {
-        Route53 : Route53
-        CertificateManager : ACM\nCertificate
-        Route53 --> CertificateManager : HTTPS\napi.example.com
+' === Edge ===
+package "Edge" as edge #E3F2FD {
+    rectangle "Route 53 (DNS)" as route53 #BBDEFB
+    rectangle "ACM Certificate (TLS)" as acm #BBDEFB
+    rectangle "AWS WAF\n(managed rules + rate limiting)" as waf #EF9A9A
+}
+
+' === VPC ===
+rectangle "VPC (10.0.0.0/16)" as vpc #F5F5F5 {
+
+    package "Public Subnets" as pub_subnets #E3F2FD {
+        rectangle "Application Load Balancer\n(HTTPS:443 -> HTTP:4444)" as alb #90CAF9
+        rectangle "NAT Gateway" as natgw #90CAF9
     }
 
-    rectangle "VPC (10.0.0.0/16)" <<internal>> {
-        package "Public Subnets" {
-            rectangle "ALB + WAF" {
-                ElasticLoadBalancingApplicationLoadBalancer : Application\nLoad Balancer
-                WAF : AWS WAF\n(Managed Rules)
-                WAF --> ElasticLoadBalancingApplicationLoadBalancer
-            }
-            rectangle "NAT Gateway" {
-                NATGateway : NAT Gateway\n(Outbound Access)
-            }
+    package "Private Subnets" as priv_subnets #F1F8E9 {
+
+        rectangle "Compute (orchestrator x compute_type -- pick one)" as compute #E8F5E9 {
+            rectangle "ECS Fargate" as ecs_fargate #C8E6C9
+            rectangle "ECS on EC2" as ecs_ec2 #C8E6C9
+            rectangle "EKS Fargate" as eks_fargate #C8E6C9
+            rectangle "EKS on EC2" as eks_ec2 #C8E6C9
         }
 
-        package "Private Subnets (AZ 1a, 1b)" {
-            rectangle "Compute - Option A: ECS Fargate" {
-                ElasticContainerService : ECS Fargate\nCluster
-                rectangle "Tasks" {
-                    rectangle "mcpgateway-task-1" as task1
-                    rectangle "mcpgateway-task-2" as task2
-                    rectangle "..." as task_dots
-                }
-                task1 -up-> ElasticContainerService
-                task2 -up-> ElasticContainerService
-                task_dots -up-> ElasticContainerService
-            }
-
-            rectangle "Compute - Option B: EKS" {
-                ElasticKubernetesService : EKS Cluster
-                rectangle "Kubernetes Pods" {
-                    rectangle "mcpgateway-pod-1" as pod1
-                    rectangle "mcpgateway-pod-2" as pod2
-                    rectangle "..." as pod_dots
-                }
-                pod1 -up-> ElasticKubernetesService
-                pod2 -up-> ElasticKubernetesService
-                pod_dots -up-> ElasticKubernetesService
-            }
-
-            rectangle "Data Stores" {
-                rectangle "Database - Option A: Aurora PostgreSQL" {
-                    AmazonAurora : Aurora\nPostgreSQL\nServerless v2
-                }
-                rectangle "Database - Option B: RDS MySQL" {
-                    AmazonRDS : RDS MySQL\n(db.t4g.medium)
-                }
-                rectangle "Database - Option C: SQLite" {
-                    rectangle "Embedded SQLite\n(Ephemeral)" as sqlite
-                }
-            }
-
-            ElastiCache : ElastiCache Redis\n(optional, cache.t4g.medium)
+        package "Data Layer" as data #FFF3E0 {
+            database "Aurora PostgreSQL\nor RDS MySQL" as db #FFE0B2
+            database "ElastiCache Redis\n(optional)" as redis #FFE0B2
         }
+    }
 
-        rectangle "Secrets Management" {
-            SecretsManager : Secrets Manager\n- JWT Secret\n- DB Password\n- Admin Password\n- Redis Auth Token
-        }
-
-        rectangle "Identity & Access" {
-            IdentityAndAccessManagement : IAM Roles\n- ECS Task Role\n- ECS Execution Role\n- (or) EKS Node Role
-        }
-
-        rectangle "Monitoring & Logging" {
-            CloudWatch : CloudWatch\n- Logs (90-day retention)\n- Metrics\n- Alarms\n- Container Insights\n- Custom Dashboards
-        }
-
-        rectangle "Storage" {
-            SimpleStorageService : S3 Buckets\n- OPA Policy Bundles\n- (optional) WAF Logs
-        }
-
-        package "Encryption" {
-            rectangle "KMS Master Key" as kms
-            kms --> AmazonAurora : RDS Encryption
-            kms --> ElastiCache : Redis Encryption
-            kms --> SecretsManager : Secret Encryption
-        }
+    package "Supporting Services" as support #F3E5F5 {
+        rectangle "Secrets Manager" as secrets #E1BEE7
+        rectangle "KMS" as kms #E1BEE7
+        rectangle "IAM Roles" as iam #E1BEE7
+        rectangle "CloudWatch\n(logs / metrics)" as cw #E1BEE7
+        rectangle "S3 (OPA bundles)" as s3 #E1BEE7
     }
 }
 
-' Network flow diagram
-client -->|Route53 DNS| Route53
-Route53 -->|HTTPS (ACM Cert)| WAF
-WAF -->|HTTP 4444| ElasticContainerService
-ElasticContainerService -->|SQL| AmazonAurora
-ElasticContainerService -->|Redis| ElastiCache
-ElasticContainerService -->|Get Secret| SecretsManager
-ElasticContainerService -->|S3 GetObject| SimpleStorageService
+' === Layout hints (hidden) ===
+route53 -[hidden]down-> acm
+acm -[hidden]down-> waf
+alb -[hidden]right-> natgw
+ecs_fargate -[hidden]right-> ecs_ec2
+eks_fargate -[hidden]right-> eks_ec2
+ecs_fargate -[hidden]down-> eks_fargate
+ecs_ec2 -[hidden]down-> eks_ec2
+db -[hidden]right-> redis
+secrets -[hidden]right-> kms
+kms -[hidden]right-> iam
+iam -[hidden]right-> cw
+cw -[hidden]right-> s3
 
-' Alternative paths (EKS)
-WAF -->|HTTP 4444| ElasticKubernetesService
-ElasticKubernetesService -->|SQL| AmazonAurora
-ElasticKubernetesService -->|SQL| AmazonRDS
-ElasticKubernetesService -->|SQL| sqlite
+' === Primary request flow ===
+client -[#1565C0,bold]-> route53 : DNS
+route53 -[#1565C0,bold]-> acm
+acm -[#1565C0,bold]-> waf : HTTPS
+waf -[#1565C0,bold]-> alb
+alb -[#2E7D32,bold]-> compute : HTTP 4444
 
-' Monitoring
-ElasticContainerService -->|Logs| CloudWatch
-ElasticKubernetesService -->|Logs| CloudWatch
-AmazonAurora -->|Metrics| CloudWatch
-ElastiCache -->|Metrics| CloudWatch
-ElasticLoadBalancingApplicationLoadBalancer -->|Metrics| CloudWatch
+' === Compute to Data ===
+compute -[#E65100,bold]-> db : SQL
+compute -[#E65100]-> redis : cache
 
-' IAM & KMS
-IdentityAndAccessManagement -->|Allow| ElasticContainerService
-IdentityAndAccessManagement -->|Allow| ElasticKubernetesService
-kms -->|KMS Decrypt| ElasticContainerService
-kms -->|KMS Decrypt| SecretsManager
+' === Supporting connections ===
+secrets .[#7B1FA2]-> compute : inject secrets
+s3 .[#7B1FA2]-> compute : OPA policies
+compute .[#9E9E9E]-> cw : logs
+compute .[#9E9E9E]-> natgw : outbound
 
-' Outbound access
-task1 -->|Outbound| NATGateway
-pod1 -->|Outbound| NATGateway
-NATGateway -->|Internet| client
+' === KMS encryption ===
+kms .[#7B1FA2]-> db : encrypt
+kms .[#7B1FA2]-> redis
+kms .[#7B1FA2]-> secrets
 
-' Legend
-note right of Route53
-  **Architecture Components:**
-
-  **Internet Input:**
-  - Route53 DNS resolution
-  - ACM certificate (auto-renewal)
-
-  **Network Protection:**
-  - AWS WAF with managed rules
-  - Rate limiting (2000 req/5min per IP)
-
-  **Compute Layers:**
-  - ECS Fargate (recommended) OR EKS
-  - Auto-scaling by replica count
-
-  **Data Layer:**
-  - Aurora PostgreSQL (recommended)
-  - OR RDS MySQL
-  - OR SQLite (single-instance only)
-  - Optional Redis for caching/sessions
-
-  **Security:**
-  - Secrets Manager (encrypted at rest)
-  - IAM roles with least privilege
-  - KMS encryption for storage
-  - Private subnets (no direct internet)
-  - Security groups restrict traffic
-
-  **Monitoring:**
-  - CloudWatch Logs with retention
-  - Container Insights (ECS)
-  - Custom alarms (5xx, auth failures)
-
-  **Storage:**
-  - S3 for OPA policy bundles
-  - S3 for WAF logs (optional)
-
-  **All traffic flows:**
-  - Client → ALB (HTTP/HTTPS)
-  - ALB → ECS/EKS (HTTP 4444)
-  - ECS/EKS ↔ Database (private)
-  - ECS/EKS ↔ Redis (private)
-  - ECS/EKS → S3 (private)
-  - Secrets injected via IAM role
-  - Outbound via NAT Gateway
-end note
-
+' === Legend ===
 legend right
-  |<#E1F5FF> **AWS Internal Resources** |
-  |<#FFF9C4> **External/Internet** |
+  |<#90CAF9>  | Network (ALB, NAT, DNS) |
+  |<#C8E6C9>  | Compute (ECS / EKS) |
+  |<#FFE0B2>  | Data (DB, Redis) |
+  |<#EF9A9A>  | Security (WAF) |
+  |<#E1BEE7>  | Supporting (Secrets, KMS, IAM, CW, S3) |
+  Bold arrows: primary request path
+  Dotted: supporting & monitoring
 end legend
 
 @enduml
